@@ -1,0 +1,14 @@
+# IntelliJ IDEA
+*.iml
+.idea/
+
+# Terraform
+*.tfplan
+*.tfstate
+*.tfstate.backup
+
+# Other
+#*.zip
+
+#Terraform
+**/plugins
