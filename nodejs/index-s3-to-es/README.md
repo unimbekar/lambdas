@@ -6,8 +6,8 @@ Indexes from S3 to Elastic Search
 3. Change the following in index.js as per env:
   <pre>
     var s3Params = {
-        Bucket: '<bucket-name>',   
-        Prefix: '<Key Prefix. Could be folder prefix>
+        Bucket: '&lt;bucket-name>',   
+        Prefix: '&lt;Key Prefix. Could be folder prefix>'
     };
 
     /* Globals */
