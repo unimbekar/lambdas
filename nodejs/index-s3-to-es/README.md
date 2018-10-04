@@ -12,10 +12,10 @@ Indexes from S3 to Elastic Search
 
     /* Globals */
     var esDomain = {
-        domain: '<domain-name>',
-        region: 'us-east-1',
-        index: '<index-name>',
-        doctype: '<doc-type>'
+        domain: '&lt;domain-name>',
+        region: '&lt;region>',
+        index: '&lt;index-name>',
+        doctype: '&lt;doc-type>'
     };
    </pre>
 4. Creates indices with unique MD5 hash of each record. This ensures that records are NEVER duplicated even if they come from different source.
