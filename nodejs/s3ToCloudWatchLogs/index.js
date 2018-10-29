@@ -17,9 +17,15 @@ var utils = require('./utils');
 //   StartAfter: 'STRING_VALUE'
 // };
 
+var allKeys = [];
+var isTruncated = true;
+var marker = '';
+
 var s3Params = {
-    Bucket: '<bucket>',   
-    Prefix: '<s3-key-prefix>'
+    Bucket: 'fnma-imr-devl-us-east-1-private',   
+    MaxKeys: 10000000,
+    Prefix: '<data-prefix>'
+    
 };
 
 var s3 = new AWS.S3();
@@ -32,18 +38,21 @@ var s3 = new AWS.S3();
  */
 var credentials = new AWS.EnvironmentCredentials('AWS');
 
-var keyCounter = 0;
-var lineCounter = 0;
-var rec = 0;
+var keyCounter = 0,
+  lineCounter = 0,
+  rec = 0,
+  myContext = null,
+  i = 0,
+  retry = 0,
+  startIndexing = false,
+  maxTries = 5;
+
 
 function s3ToLogs(bucket, key, context) {
     keyCounter  += 1;
-    // Note: The Lambda function should be configured to filter for .log files
-    // (as part of the Event Source "suffix" setting).
-    
     if(typeof key != 'undefined') {
         key = key.replace('+', ' ');
-        var s3Stream = s3.getObject({Bucket: bucket, Key: key}).createReadStream();
+        var s3Stream = s3.getObject({Bucket: bucket, Key: key}).createReadStream().promise();
         const r1 = readline.createInterface(s3Stream);
         // console.log("Read Stream==>" + s3Stream);
         var arr = [];
@@ -53,19 +62,17 @@ function s3ToLogs(bucket, key, context) {
         r1
           .on('line', function(line) {
               lineCounter = lineCounter + 1;
-                arr = JSON.parse(line).data;
-    //          line = JSON.stringify(JSON.parse(line)
-    //                     .data[0]);
-              for(var item of arr) {
-                rec = rec + 1;
-                // console.log("File, Line, rec# " + keyCounter + ", " + lineCounter + ", " + rec);
-                json = JSON.stringify(item);
-                console.log(json);
-                // indexDocument(json, utils.md5(json));
-              }
-          });
+                  arr = JSON.parse(line).data;
+                  for(var item of arr) {
+                    rec = rec + 1;
+                    item.file = key;
+                    json = JSON.stringify(item);
+                    console.log(json);
+                  }
+            });
     
-        r1.on('error', function() {
+        r1
+          .on('error', function() {
             console.log(
                 'Error getting object "' + key + '" from bucket "' + bucket + '".  ' +
                 'Make sure they exist and your bucket is in the same region as this function.');
@@ -74,33 +81,158 @@ function s3ToLogs(bucket, key, context) {
     }
 }
 
-function logESJSONs(context) {
+async function listAllObjectsFromS3BucketAndIndexToES(context) {
+  let isTruncated = true;
+  let marker;
+  let i = 0;
+  let key = '';
+  let arr = [];
+  let json = '';
+  
+  while(isTruncated) {
+    if (marker) 
+        s3Params.Marker = marker;
+    try {
+      const response = await s3.listObjects(s3Params).promise();
+      response.Contents.forEach(item => {
+        key = item.Key;
+        if(key.indexOf('json') > 0) {
+            // console.log("[" + i + "] -> " + key);
+            i++;
+            if(typeof key != 'undefined') {
+                key = key.replace('+', ' ');
+                var s3Stream = s3.getObject({Bucket: s3Params.Bucket, Key: key}).createReadStream();
+                const r1 = readline.createInterface(s3Stream);
+                r1
+                  .on('line', function(line) {
+                    //   console.log(line);
+                      lineCounter = lineCounter + 1;
+                          arr = JSON.parse(line).data;
+                          if(arr != null && arr.length > 0) {
+                              for(var jsonItem of arr) {
+                                rec = rec + 1;
+                                jsonItem.file = key;
+                                json = JSON.stringify(jsonItem);
+                                console.log(json);
+                              }
+                          }
+                    });
+            
+                r1
+                  .on('error', function() {
+                    console.log(
+                        'Error getting object "' + key + '" from bucket "' + s3Params.Bucket + '".  ' +
+                        'Make sure they exist and your bucket is in the same region as this function.');
+                    context.fail();
+                });
+            }
+        }
+      });
+      isTruncated = response.IsTruncated;
+      console.log('isTruncated=>' + isTruncated);
+      if (isTruncated) {
+        marker = response.Contents.slice(-1)[0].Key;
+      }
+  } catch(error) {
+      console.log(error);
+      console.log('Total = ' + i);
+      throw error;
+    }
+    console.log('Total = ' + i);
+  }
+}
+
+// function getAllS3Keys(context) {
+//     s3.listObjectsV2(s3Params, function (err, data) {
+//         if (err) {
+//             console.log(err, err.stack); // an error occurred
+//         } 
+//         else {
+//             // while(isTruncated) {
+//             var contents = data.Contents;
+//             contents.forEach(function (content) {
+//                 allKeys.push(content.Key);
+//                 console.log("Key Count [" + (keyCounter++) + "]");
+//                 // console.log('Indexing => ' + content.Key);
+//                 s3ToLogs(s3Params.Bucket, content.Key, context);
+//             });
+
+//             isTruncated = data.IsTruncated;
+//             if (isTruncated) {
+//                 s3Params.ContinuationToken = data.NextContinuationToken;
+//                 // marker = data.NextMarker;
+//                 // console.log("marker = " + marker);
+//                 console.log("get further list...");
+//                 getAllS3Keys(context);
+//             } 
+//         }
+
+//         // }
+//     });
+// }
+
+function getAllS3Keys() {
     s3.listObjectsV2(s3Params, function (err, data) {
         if (err) {
             console.log(err, err.stack); // an error occurred
-        } else {
-            var contents = data.Contents;
-            contents.forEach(function (content) {
-                // allKeys.push(content.Key);
-                // console.log('Indexing => ' + content.Key);
-                s3ToLogs(s3Params.Bucket, content.Key, context);
-            });
-
-            if (data.IsTruncated) {
+        } 
+        else {
+            while(data.IsTruncated) {
                 s3Params.ContinuationToken = data.NextContinuationToken;
-                console.log("get further list...");
-                s3ToLogs();
-            } 
+                console.log("Total Keys Fetched so far [" + allKeys.length + "], getting further list...");
+                
+                var contents = data.Contents;
+                contents.forEach(function (content) {
+                    if(content.Key.indexOf('json') > 0) {
+                        allKeys.push(content.Key);
+                    }
+                });
+            }
 
+            if(!data.IsTruncated) {
+                indexToES(myContext);
+            }
         }
     });
 }
 
+
+
+const sleep = (milliseconds) => {
+  return new Promise(resolve => setTimeout(resolve, milliseconds))
+}
+
+function indexToES(context) {
+    console.log("TOTAL/Processed KEYS = [" + allKeys.length + "/" + i + "]" );
+    if(allKeys.length > 0) {
+        allKeys.forEach(function (s3Key) {
+            i++;
+            if(i%5000 == 0) {
+                sleep(5000).then(() => {
+                  console.log("sleeping for 5 secs");
+                });            
+            }
+            
+            try {
+                // console.log("Key [" + s3Key + "]");
+                s3ToLogs(s3Params.Bucket, s3Key, context);
+            }
+            catch(ex) {
+                console.log(ex);
+                console.log("Error thrown at KEY# " + i);
+                retry++;
+                if(retry == maxTries) {
+                    throw ('Max tries Reached. Exiting now');
+                }
+            }
+        });
+    }
+    
+    startIndexing = false;
+}
+
+
 /* Lambda "main": Execution starts here */
 exports.handler = function(event, context) {
-    console.log('Received event: ', JSON.stringify(event, null, 2));
-    // var bucket = 'upen-data';
-    // var objKey = 'samples/es/movies3.json';
-    // s3ToLogs(bucket, objKey, context);
-    logESJSONs(context);
-}
+    listAllObjectsFromS3BucketAndIndexToES(context);
+};
