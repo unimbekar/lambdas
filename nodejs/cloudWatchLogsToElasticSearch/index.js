@@ -46,6 +46,7 @@ function transform(logData) {
     } else {
         var bulkData = '';
         var msgAsStr = ''
+        var jsonStr = ''
 
         logData.logEvents.forEach(function (logEvent) {
             var action = { "index": {} },
@@ -63,9 +64,16 @@ function transform(logData) {
             logName = logName[logName.length - 1];
             logType = logType[logType.length - 1];
 
+            source['@message'] = extractJson(logEvent.message);
+            console.log('Source Message ==> ' + source['@message']);
+            
+            jsonStr = JSON.stringify(JSON.parse(source['@message']));
+
             action.index._index = indiceName;
             action.index._type = logType;
-            action.index._id = logEvent.id;
+            action.index._id = crypto.createHash('md5').update(jsonStr).digest('hex');
+            // action.index._id = logEvent.id;
+            
 
             // source['@log_group'] = logData.logGroup;
             // source['@log_name'] = logName;
@@ -74,12 +82,11 @@ function transform(logData) {
             // source['@owner'] = logData.owner;
             // source['@timestamp'] = timeStamp;
 
-            source['@message'] = extractJson(logEvent.message);
-            console.log('Source Message ==> ' + source['@message']);
             if(source['@message'] != null && source['@message'] != '') {
                 bulkData += [
                     JSON.stringify(action),
-                    JSON.stringify(JSON.parse(source['@message']))
+                    jsonStr
+                    // JSON.stringify(JSON.parse(source['@message']))
                 ].join('\n') + '\n';
             }
 
