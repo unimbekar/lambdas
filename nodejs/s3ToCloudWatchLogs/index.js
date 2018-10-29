@@ -22,7 +22,7 @@ var isTruncated = true;
 var marker = '';
 
 var s3Params = {
-    Bucket: 'fnma-imr-devl-us-east-1-private',   
+    Bucket: '<bucket-name>',   
     MaxKeys: 10000000,
     Prefix: '<data-prefix>'
     
